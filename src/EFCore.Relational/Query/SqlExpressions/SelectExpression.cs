@@ -1378,7 +1378,13 @@ namespace Microsoft.EntityFrameworkCore.Query.SqlExpressions
                 && selectExpression.Predicate != null)
             {
                 var columnExpressions = new List<ColumnExpression>();
-                var joinPredicate = TryExtractJoinKey(selectExpression, selectExpression.Predicate, columnExpressions, out var predicate);
+                var joinPredicate = TryExtractJoinKey(
+                    selectExpression,
+                    selectExpression.Predicate,
+                    columnExpressions,
+                    allowOrderComparison: true,
+                    out var predicate);
+
                 if (joinPredicate != null)
                 {
                     joinPredicate = RemoveRedundantNullChecks(joinPredicate, columnExpressions);
@@ -1396,11 +1402,12 @@ namespace Microsoft.EntityFrameworkCore.Query.SqlExpressions
             SelectExpression selectExpression,
             SqlExpression predicate,
             List<ColumnExpression> columnExpressions,
+            bool allowOrderComparison,
             out SqlExpression updatedPredicate)
         {
             if (predicate is SqlBinaryExpression sqlBinaryExpression)
             {
-                var joinPredicate = ValidateKeyComparison(selectExpression, sqlBinaryExpression, columnExpressions);
+                var joinPredicate = ValidateKeyComparison(selectExpression, sqlBinaryExpression, columnExpressions, allowOrderComparison);
                 if (joinPredicate != null)
                 {
                     updatedPredicate = null;
@@ -1411,9 +1418,9 @@ namespace Microsoft.EntityFrameworkCore.Query.SqlExpressions
                 if (sqlBinaryExpression.OperatorType == ExpressionType.AndAlso)
                 {
                     var leftJoinKey = TryExtractJoinKey(
-                        selectExpression, sqlBinaryExpression.Left, columnExpressions, out var leftPredicate);
+                        selectExpression, sqlBinaryExpression.Left, columnExpressions, allowOrderComparison: false, out var leftPredicate);
                     var rightJoinKey = TryExtractJoinKey(
-                        selectExpression, sqlBinaryExpression.Right, columnExpressions, out var rightPredicate);
+                        selectExpression, sqlBinaryExpression.Right, columnExpressions, allowOrderComparison: false, out var rightPredicate);
 
                     updatedPredicate = CombineNonNullExpressions(leftPredicate, rightPredicate);
 
@@ -1434,9 +1441,18 @@ namespace Microsoft.EntityFrameworkCore.Query.SqlExpressions
                 : right;
 
         private SqlBinaryExpression ValidateKeyComparison(
-            SelectExpression inner, SqlBinaryExpression sqlBinaryExpression, List<ColumnExpression> columnExpressions)
+            SelectExpression inner,
+            SqlBinaryExpression sqlBinaryExpression,
+            List<ColumnExpression> columnExpressions,
+            bool allowOrderComparison)
         {
-            if (sqlBinaryExpression.OperatorType == ExpressionType.Equal)
+            if (sqlBinaryExpression.OperatorType == ExpressionType.Equal
+                || (allowOrderComparison
+                    && (sqlBinaryExpression.OperatorType == ExpressionType.NotEqual
+                        || sqlBinaryExpression.OperatorType == ExpressionType.GreaterThan
+                        || sqlBinaryExpression.OperatorType == ExpressionType.GreaterThanOrEqual
+                        || sqlBinaryExpression.OperatorType == ExpressionType.LessThan
+                        || sqlBinaryExpression.OperatorType == ExpressionType.LessThanOrEqual)))
             {
                 if (sqlBinaryExpression.Left is ColumnExpression leftColumn
                     && sqlBinaryExpression.Right is ColumnExpression rightColumn)
